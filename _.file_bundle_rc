@@ -1,0 +1,4 @@
+entry = ["./**/*.go"]
+exclude = [".bundle", ".bundle.txt", ".mod", ".sum", ]
+output = "bundle.bundle.txt"
+description = ""
