@@ -144,9 +144,7 @@ func (p *MockPlugin) BeforeRequest(req *http.Request) error {
 	req.Body = io.NopCloser(bytes.NewBuffer(body))
 
 	// 添加调试日志
-	p.logger.Debug("Mock plugin: Checking request",
-		"model", chatReq.Model,
-		"messages", chatReq.Messages)
+	p.logger.Debug("Mock plugin: Checking request", chatRequestLogSummary(&chatReq))
 
 	// 检查是否匹配任何规则
 	for _, rule := range p.rules {
@@ -175,7 +173,7 @@ func (p *MockPlugin) BeforeRequest(req *http.Request) error {
 			req.Header.Set("X-Mock-Direct-Response", string(respData))
 
 			// 添加调试日志
-			p.logger.Debug("Mock plugin: Generated response", string(respData))
+			p.logger.Debug("Mock plugin: Generated response", chatResponseLogSummary(resp))
 			break
 		}
 	}
@@ -226,12 +224,12 @@ func (p *MockPlugin) AfterResponse(resp *http.Response) error {
 		}
 		newBody.WriteString("data: [DONE]\n\n")
 
-		p.logger.Debug("Mock: Generated stream response", newBody.String())
+		p.logger.Debug("Mock: Generated stream response", payloadLogSummary(newBody.Bytes()))
 
 		resp.Body = io.NopCloser(newBody)
 		resp.Header.Set("Content-Type", "text/event-stream")
 	} else {
-		p.logger.Debug("Mock: Using normal response", mockResp)
+		p.logger.Debug("Mock: Using normal response", payloadLogSummary([]byte(mockResp)))
 		resp.Body = io.NopCloser(bytes.NewBufferString(mockResp))
 		resp.Header.Set("Content-Type", "application/json")
 	}

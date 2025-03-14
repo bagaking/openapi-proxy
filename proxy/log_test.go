@@ -8,10 +8,11 @@ import (
 
 func TestRedactedHeaderMasksSensitiveValues(t *testing.T) {
 	headers := http.Header{
-		"Authorization": []string{"Bearer configured-value"},
-		"Content-Type":  []string{"application/json"},
-		"Cookie":        []string{"session=private"},
-		"X-Api-Key":     []string{"private-api-key"},
+		"Authorization":          []string{"Bearer configured-value"},
+		"Content-Type":           []string{"application/json"},
+		"Cookie":                 []string{"session=private"},
+		"X-Api-Key":              []string{"private-api-key"},
+		"X-Mock-Direct-Response": []string{`{"content":"private"}`},
 	}
 
 	got := redactedHeader(headers)
@@ -24,6 +25,9 @@ func TestRedactedHeaderMasksSensitiveValues(t *testing.T) {
 	}
 	if got.Get("X-Api-Key") != "[REDACTED]" {
 		t.Errorf("X-Api-Key = %q, want redacted", got.Get("X-Api-Key"))
+	}
+	if got.Get("X-Mock-Direct-Response") != "[REDACTED]" {
+		t.Errorf("X-Mock-Direct-Response = %q, want redacted", got.Get("X-Mock-Direct-Response"))
 	}
 	if got.Get("Content-Type") != "application/json" {
 		t.Errorf("Content-Type = %q, want preserved", got.Get("Content-Type"))

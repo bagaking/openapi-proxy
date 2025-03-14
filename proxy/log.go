@@ -26,13 +26,14 @@ type DefaultLogger struct {
 }
 
 var sensitiveHeaderNames = map[string]struct{}{
-	"api-key":             {},
-	"authorization":       {},
-	"cookie":              {},
-	"openai-organization": {},
-	"proxy-authorization": {},
-	"set-cookie":          {},
-	"x-api-key":           {},
+	"api-key":                {},
+	"authorization":          {},
+	"cookie":                 {},
+	"openai-organization":    {},
+	"proxy-authorization":    {},
+	"set-cookie":             {},
+	"x-api-key":              {},
+	"x-mock-direct-response": {},
 }
 
 func NewDefaultLogger() *DefaultLogger {

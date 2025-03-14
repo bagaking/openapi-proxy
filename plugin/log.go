@@ -17,7 +17,7 @@ func (p *LogPlugin) BeforeRequest(req *http.Request) error {
 	body, _ := io.ReadAll(req.Body)
 	req.Body = io.NopCloser(bytes.NewBuffer(body))
 
-	fmt.Printf("[Request] %s %s: %s\n", req.Method, req.URL, string(body))
+	fmt.Printf("[Request] %s %s: %s\n", req.Method, req.URL, payloadLogSummary(body))
 	return nil
 }
 
@@ -26,6 +26,6 @@ func (p *LogPlugin) AfterResponse(resp *http.Response) error {
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body = io.NopCloser(bytes.NewBuffer(body))
 
-	fmt.Printf("[Response] Status: %d, Body: %s\n", resp.StatusCode, string(body))
+	fmt.Printf("[Response] Status: %d, Body: %s\n", resp.StatusCode, payloadLogSummary(body))
 	return nil
 }
