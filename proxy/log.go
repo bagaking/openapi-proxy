@@ -34,6 +34,7 @@ var sensitiveHeaderNames = map[string]struct{}{
 	"set-cookie":             {},
 	"x-api-key":              {},
 	"x-mock-direct-response": {},
+	"x-mock-response":        {},
 }
 
 func NewDefaultLogger() *DefaultLogger {

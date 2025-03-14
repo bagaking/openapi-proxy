@@ -73,36 +73,64 @@ func TestStartCursorProxyAppliesModelMappings(t *testing.T) {
 
 func TestStartCursorProxyLogsDoNotExposeMockPrompt(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	const prompt = "Test prompt using private context"
 	const chatCompletionsPath = "v1/chat/completions"
 
-	output := captureStdout(t, func() {
-		handler, err := StartCursorProxy(Config{
-			TargetURL: "http://example.test",
-		}, nil)
-		if err != nil {
-			t.Fatalf("StartCursorProxy returned error: %v", err)
-		}
-
-		router := gin.New()
-		router.POST("/"+chatCompletionsPath, handler)
-
-		resp := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/"+chatCompletionsPath,
-			bytes.NewReader([]byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"`+prompt+`"}]}`)))
-		req.Header.Set("Content-Type", "application/json")
-		router.ServeHTTP(resp, req)
-
-		if resp.Code != http.StatusOK {
-			t.Fatalf("StartCursorProxy response code = %d, want %d; body = %s", resp.Code, http.StatusOK, resp.Body.String())
-		}
-	})
-
-	if strings.Contains(output, prompt) {
-		t.Fatalf("captured logs leaked prompt %q:\n%s", prompt, output)
+	tests := []struct {
+		name      string
+		prompt    string
+		body      []byte
+		forbidden []string
+	}{
+		{
+			name:   "cursor proxy rule",
+			prompt: "Test prompt using private context",
+			body:   []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"Test prompt using private context"}]}`),
+			forbidden: []string{
+				"Test prompt using private context",
+				"private context",
+			},
+		},
+		{
+			name:   "built in mock rule",
+			prompt: "Testing. Just say hi and nothing else.",
+			body: []byte(`{"model":"gpt-4o","messages":[{"role":"system","content":"system private instruction"},` +
+				`{"role":"user","content":"Testing. Just say hi and nothing else."}]}`),
+			forbidden: []string{
+				"system private instruction",
+				"Testing. Just say hi and nothing else.",
+			},
+		},
 	}
-	if strings.Contains(output, "private context") {
-		t.Fatalf("captured logs leaked prompt fragment:\n%s", output)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output := captureStdout(t, func() {
+				handler, err := StartCursorProxy(Config{
+					TargetURL: "http://example.test",
+				}, nil)
+				if err != nil {
+					t.Fatalf("StartCursorProxy returned error: %v", err)
+				}
+
+				router := gin.New()
+				router.POST("/"+chatCompletionsPath, handler)
+
+				resp := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodPost, "/"+chatCompletionsPath, bytes.NewReader(tt.body))
+				req.Header.Set("Content-Type", "application/json")
+				router.ServeHTTP(resp, req)
+
+				if resp.Code != http.StatusOK {
+					t.Fatalf("StartCursorProxy response code = %d, want %d; body = %s", resp.Code, http.StatusOK, resp.Body.String())
+				}
+			})
+
+			for _, forbidden := range tt.forbidden {
+				if strings.Contains(output, forbidden) {
+					t.Fatalf("captured logs leaked %q:\n%s", forbidden, output)
+				}
+			}
+		})
 	}
 }
 
