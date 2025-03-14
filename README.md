@@ -1,6 +1,42 @@
-# 用法
+# openapi-proxy
 
-## 同一个 gin server 上启动多个代理
+Go proxy for OpenAI-compatible API services. It can be embedded in an existing
+Gin server or run as a standalone local proxy.
+
+## 本地验证
+
+本地验证只依赖 Go toolchain，不需要真实 AI 服务或线上凭据：
+
+```sh
+go test ./...
+```
+
+也可以使用仓库入口：
+
+```sh
+make test
+```
+
+## 运行独立代理
+
+默认命令会在 `:8899` 启动代理，并使用 `OPENAI_API_KEY` 作为上游
+`Authorization` token：
+
+```sh
+export OPENAI_API_KEY="your-token"
+go run .
+```
+
+安装后运行：
+
+```sh
+go install github.com/bagaking/openapi-proxy@latest
+openapi-proxy
+```
+
+## 用法
+
+### 同一个 gin server 上启动多个代理
 
 ```go
 package main
@@ -66,7 +102,7 @@ func main() {
 }
 ```
 
-## 通过代理创建服务 
+### 通过代理创建服务
 
 ```go
 package main
@@ -95,11 +131,4 @@ func main() {
     select {}
 }
 
-```
-
-## 直接提供服务，可以用于 localhost
-
-```
-go install github.com/bagaking/openapi-proxy
-openapi-proxy
 ```
