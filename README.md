@@ -11,10 +11,10 @@ Gin server or run as a standalone local proxy.
 go test ./...
 ```
 
-也可以使用仓库入口：
+也可以使用仓库统一验证入口：
 
 ```sh
-make test
+make check
 ```
 
 ## 运行独立代理
