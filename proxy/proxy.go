@@ -170,9 +170,9 @@ func (p *Proxy) handleRequest(c *gin.Context) {
 
 	// 7. 记录请求信息
 	p.logger.Info(fmt.Sprintf("Incoming request: %s %s", c.Request.Method, c.Request.URL.Path))
-	p.logger.Debug("Request headers:", c.Request.Header)
+	p.logger.Debug("Request headers:", redactedHeader(c.Request.Header))
 	if len(reqBody) > 0 {
-		p.logger.Debug("Request body:", string(reqBody))
+		p.logger.Debug("Request body:", bodyLogSummary(reqBody))
 	}
 
 	// 8. 创建反向代理
@@ -231,7 +231,7 @@ func (p *Proxy) handleRequest(c *gin.Context) {
 			}
 
 			p.logger.Debug("Final request path:", req.URL.Path)
-			p.logger.Debug("Final request headers:", req.Header)
+			p.logger.Debug("Final request headers:", redactedHeader(req.Header))
 		},
 		Transport: &LoggingTransport{
 			Transport: &http.Transport{
