@@ -74,9 +74,10 @@ func TestHandleRequestRejectsPathsOutsidePrefix(t *testing.T) {
 	}))
 	t.Cleanup(backend.Close)
 
+	prefix := "/" + "openai"
 	router := newProxyTestRouter(Config{
 		TargetURL:  backend.URL,
-		PathPrefix: "/openai",
+		PathPrefix: prefix,
 	})
 
 	pathPrefix := "/"
@@ -99,6 +100,59 @@ func TestHandleRequestRejectsPathsOutsidePrefix(t *testing.T) {
 	}
 	if calledBackend {
 		t.Fatal("path outside prefix called backend, want prefix boundary rejection")
+	}
+}
+
+func TestHandleRequestAcceptsPathPrefixBoundary(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	calledBackend := false
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calledBackend = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(backend.Close)
+
+	prefix := "/" + "openai"
+	router := newProxyTestRouter(Config{
+		TargetURL:  backend.URL,
+		PathPrefix: prefix,
+		Models: []ModelInfo{
+			{
+				ID:      "test-model",
+				Object:  "model",
+				Created: 123,
+				OwnedBy: "test-owner",
+			},
+		},
+	})
+
+	resp := httptest.NewRecorder()
+	modelsPath := prefix + "/" + "v1/models"
+	req := httptest.NewRequest(http.MethodGet, modelsPath, nil)
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("GET %s status = %d, want %d; body = %s", modelsPath, resp.Code, http.StatusOK, resp.Body.String())
+	}
+	if calledBackend {
+		t.Fatalf("GET %s called backend, want local models response after prefix trim", modelsPath)
+	}
+
+	frontend := httptest.NewServer(router)
+	t.Cleanup(frontend.Close)
+
+	exactResp, err := http.Get(frontend.URL + prefix)
+	if err != nil {
+		t.Fatalf("GET %s returned error: %v", prefix, err)
+	}
+	t.Cleanup(func() { exactResp.Body.Close() })
+
+	if exactResp.StatusCode == http.StatusNotFound {
+		t.Fatalf("GET %s status = %d, want accepted exact prefix boundary", prefix, exactResp.StatusCode)
+	}
+	if !calledBackend {
+		t.Fatalf("GET %s did not call backend, want exact prefix accepted and proxied", prefix)
 	}
 }
 
