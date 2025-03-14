@@ -32,7 +32,13 @@ func NewModelMapPlugin(logger Logger) *ModelMapPlugin {
 
 // Configure 配置插件
 func (p *ModelMapPlugin) Configure(config json.RawMessage) error {
-	return json.Unmarshal(config, &p.config)
+	if err := json.Unmarshal(config, &p.config); err != nil {
+		return err
+	}
+	if p.config.Mappings == nil {
+		p.config.Mappings = make(map[string]string)
+	}
+	return nil
 }
 
 // AddMapping 添加模型映射

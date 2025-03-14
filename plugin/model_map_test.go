@@ -50,6 +50,29 @@ func TestModelMapPluginBeforeRequestRewritesMappedModel(t *testing.T) {
 	}
 }
 
+func TestModelMapPluginConfigureKeepsMappingsMutableWhenOmitted(t *testing.T) {
+	plugin := NewModelMapPlugin(testLogger{})
+
+	if err := plugin.Configure([]byte(`{}`)); err != nil {
+		t.Fatalf("Configure returned error: %v", err)
+	}
+
+	plugin.AddMapping("gpt-4o", "provider-model")
+
+	req := newChatRequest(t, []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}`))
+	if err := plugin.BeforeRequest(req); err != nil {
+		t.Fatalf("BeforeRequest returned error: %v", err)
+	}
+
+	var got map[string]interface{}
+	if err := json.Unmarshal(readRequestBody(t, req), &got); err != nil {
+		t.Fatalf("rewritten body is not JSON: %v", err)
+	}
+	if got["model"] != "provider-model" {
+		t.Fatalf("model was not rewritten after Configure: got %v", got["model"])
+	}
+}
+
 func newChatRequest(t *testing.T, body []byte) *http.Request {
 	t.Helper()
 
