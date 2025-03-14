@@ -232,6 +232,46 @@ func TestHandleRequestRewritesOpenAIPathAndUsesConfiguredAuthorization(t *testin
 	}
 }
 
+func TestHandleRequestRewritePreservesTrailingSlash(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	pathSep := "/"
+	targetBasePath := pathSep + "api" + pathSep + "v3" + pathSep
+	requestPath := pathSep + "v1" + pathSep + "files" + pathSep
+	wantPath := pathSep + "api" + pathSep + "v3" + pathSep + "files" + pathSep
+
+	paths := make(chan string, 1)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths <- r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(backend.Close)
+
+	router := newProxyTestRouter(Config{
+		TargetURL: backend.URL + targetBasePath,
+		Headers: map[string]string{
+			"Authorization": "Bearer configured-value",
+		},
+	})
+	frontend := httptest.NewServer(router)
+	t.Cleanup(frontend.Close)
+
+	resp, err := http.Post(frontend.URL+requestPath, "application/json", bytes.NewReader([]byte(`{}`)))
+	if err != nil {
+		t.Fatalf("POST %s returned error: %v", requestPath, err)
+	}
+	t.Cleanup(func() { resp.Body.Close() })
+
+	if resp.StatusCode != http.StatusNoContent {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("POST %s status = %d, want %d; body = %s", requestPath, resp.StatusCode, http.StatusNoContent, respBody)
+	}
+	got := <-paths
+	if got != wantPath {
+		t.Errorf("backend path = %q, want %q", got, wantPath)
+	}
+}
+
 func newProxyTestRouter(cfg Config) *gin.Engine {
 	router := gin.New()
 	proxy := NewProxy(cfg)

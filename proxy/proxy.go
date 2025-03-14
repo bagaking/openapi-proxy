@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"path"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -192,7 +191,7 @@ func (p *Proxy) handleRequest(c *gin.Context) {
 			originalPath := req.URL.Path
 			if strings.HasPrefix(originalPath, "/v1/") {
 				newPath := strings.TrimPrefix(originalPath, "/v1")
-				req.URL.Path = path.Join(targetURL.Path, newPath)
+				req.URL.Path = joinProxyPath(targetURL.Path, newPath)
 				p.logger.Debug("Rewritten path:", req.URL.Path)
 			}
 
@@ -319,6 +318,16 @@ func (p *Proxy) handleRequest(c *gin.Context) {
 	proxy.ServeHTTP(c.Writer, c.Request)
 
 	// 注意: 这里不会继续执行，因为 ServeHTTP 已经写入了响应
+}
+
+func joinProxyPath(basePath, requestPath string) string {
+	if requestPath == "" {
+		return basePath
+	}
+	if basePath == "" || basePath == "/" {
+		return requestPath
+	}
+	return strings.TrimRight(basePath, "/") + "/" + strings.TrimLeft(requestPath, "/")
 }
 
 // 处理 models 请求
