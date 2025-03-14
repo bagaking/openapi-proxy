@@ -82,6 +82,9 @@ func StartCursorProxy(conf Config, mappings map[string]string) (gin.HandlerFunc,
 
 	// 注册插件
 	proxy.RegisterPlugin(mockPlugin)
+	if len(mappings) > 0 {
+		proxy.RegisterPlugin(modelMapPlugin)
+	}
 
 	// 如果配置了 ListenAddr，则启动独立服务器
 	if conf.ListenAddr != "" {
