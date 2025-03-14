@@ -29,12 +29,16 @@ var sensitiveHeaderNames = map[string]struct{}{
 	"api-key":                {},
 	"authorization":          {},
 	"cookie":                 {},
+	"forwarded":              {},
 	"openai-organization":    {},
 	"proxy-authorization":    {},
 	"set-cookie":             {},
 	"x-api-key":              {},
+	"x-client-ip":            {},
+	"x-forwarded-for":        {},
 	"x-mock-direct-response": {},
 	"x-mock-response":        {},
+	"x-real-ip":              {},
 }
 
 func NewDefaultLogger() *DefaultLogger {
