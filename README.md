@@ -128,7 +128,11 @@ func main() {
     }
 
     // 保持主程序运行
-    select {}
+select {}
 }
 
 ```
+
+## License
+
+MIT License. See [LICENSE](LICENSE).
