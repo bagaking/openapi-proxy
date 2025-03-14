@@ -51,7 +51,11 @@ func main() {
 		"gpt-4":         "ep-20250208163847-fv7w8",
 		"gpt-4o":        "ep-20250208163847-fv7w8",
 		"gpt-3.5-turbo": "ep-20250208163847-fv7w8",
+		"deepseek-r1":   "ep-20250208163847-fv7w8",
 	}); err != nil {
 		os.Exit(1)
 	}
+
+	// 阻止主程序退出，使服务持续运行
+	select {}
 }

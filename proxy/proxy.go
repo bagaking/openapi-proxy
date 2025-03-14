@@ -47,6 +47,35 @@ func (p *Proxy) RegisterPlugin(plugin pluginPKG.Plugin) {
 	p.plugins = append(p.plugins, plugin)
 }
 
+// corsMiddleware 创建一个统一处理 CORS 的中间件
+func corsMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// 清除任何可能已经设置的 CORS 头部
+		c.Writer.Header().Del("Access-Control-Allow-Origin")
+		c.Writer.Header().Del("Access-Control-Allow-Methods")
+		c.Writer.Header().Del("Access-Control-Allow-Headers")
+		c.Writer.Header().Del("Access-Control-Allow-Credentials")
+
+		// 设置 CORS 头部
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, Authorization, accept, origin, Cache-Control, X-Requested-With, baggage, sentry-trace")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+
+		// 处理 OPTIONS 请求
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+
+		c.Next()
+
+		// 确保响应中的 CORS 头部是正确的（可能被其他中间件修改）
+		c.Writer.Header().Del("Access-Control-Allow-Origin")
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+	}
+}
+
 // 启动代理服务
 func (p *Proxy) Start() error {
 	gin.SetMode(gin.ReleaseMode)
@@ -54,6 +83,9 @@ func (p *Proxy) Start() error {
 
 	// 使用自定义的 recovery 中间件
 	r.Use(p.customRecovery())
+
+	// 添加 CORS 中间件
+	r.Use(corsMiddleware())
 
 	// 所有请求都转发
 	r.Any("/*path", p.handleRequest)
@@ -82,28 +114,17 @@ func (p *Proxy) customRecovery() gin.HandlerFunc {
 	}
 }
 
-// 在 proxy.go 中添加 CORS 处理
-func (p *Proxy) handleCORS(c *gin.Context) {
-	c.Header("Access-Control-Allow-Origin", "*")
-	c.Header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
-	c.Header("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, Authorization, accept, origin, Cache-Control, X-Requested-With, baggage, sentry-trace")
-	c.Header("Access-Control-Allow-Credentials", "true")
-
-	// 处理 OPTIONS 请求
-	if c.Request.Method == "OPTIONS" {
-		c.AbortWithStatus(http.StatusNoContent)
-		return
-	}
-}
-
 func (p *Proxy) handleRequest(c *gin.Context) {
-	// 1. 先处理 CORS
-	p.handleCORS(c)
+	// OPTIONS 请求已经在 CORS 中间件中处理了
 	if c.Request.Method == "OPTIONS" {
 		return
 	}
 
-	// 2. 处理路径前缀
+	// 包装响应写入器以支持流式响应
+	wrappedWriter := newStreamResponseWriter(c.Writer)
+	c.Writer = wrappedWriter
+
+	// 处理路径前缀
 	requestPath := c.Request.URL.Path
 	if p.config.PathPrefix != "" {
 		// 如果请求路径不以配置的前缀开头，返回 404
@@ -162,6 +183,10 @@ func (p *Proxy) handleRequest(c *gin.Context) {
 			req.URL.Scheme = targetURL.Scheme
 			req.URL.Host = targetURL.Host
 			req.Host = targetURL.Host
+
+			// 删除可能导致目标服务器添加 CORS 头部的请求头
+			req.Header.Del("Origin")
+			req.Header.Del("Referer")
 
 			// 修改路径处理逻辑
 			originalPath := req.URL.Path
@@ -257,6 +282,15 @@ func (p *Proxy) handleRequest(c *gin.Context) {
 				resp.Header.Set("X-Accel-Buffering", "no")
 			}
 
+			// 确保删除所有可能的 CORS 头部
+			resp.Header.Del("Access-Control-Allow-Origin")
+			resp.Header.Del("Access-Control-Allow-Methods")
+			resp.Header.Del("Access-Control-Allow-Headers")
+			resp.Header.Del("Access-Control-Allow-Credentials")
+			resp.Header.Del("Access-Control-Max-Age")
+			resp.Header.Del("Access-Control-Expose-Headers")
+			resp.Header.Del("Access-Control-Request-Method")
+
 			return nil
 		},
 	}
@@ -283,6 +317,8 @@ func (p *Proxy) handleRequest(c *gin.Context) {
 
 	// 11. 执行代理转发
 	proxy.ServeHTTP(c.Writer, c.Request)
+
+	// 注意: 这里不会继续执行，因为 ServeHTTP 已经写入了响应
 }
 
 // 处理 models 请求
