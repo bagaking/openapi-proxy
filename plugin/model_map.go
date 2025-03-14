@@ -52,6 +52,7 @@ func (p *ModelMapPlugin) BeforeRequest(req *http.Request) error {
 		return err
 	}
 	defer req.Body.Close()
+	req.Body = io.NopCloser(bytes.NewBuffer(body))
 
 	// 解析请求体
 	var requestBody map[string]interface{}
