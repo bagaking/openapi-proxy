@@ -79,15 +79,26 @@ func TestHandleRequestRejectsPathsOutsidePrefix(t *testing.T) {
 		PathPrefix: "/openai",
 	})
 
-	resp := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-	router.ServeHTTP(resp, req)
+	pathPrefix := "/"
+	tests := []struct {
+		path string
+	}{
+		{path: pathPrefix + "v1/models"},
+		{path: pathPrefix + "openaiish/v1/models"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			resp := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			router.ServeHTTP(resp, req)
 
-	if resp.Code != http.StatusNotFound {
-		t.Fatalf("GET /v1/models status = %d, want %d; body = %s", resp.Code, http.StatusNotFound, resp.Body.String())
+			if resp.Code != http.StatusNotFound {
+				t.Fatalf("GET %s status = %d, want %d; body = %s", tt.path, resp.Code, http.StatusNotFound, resp.Body.String())
+			}
+		})
 	}
 	if calledBackend {
-		t.Fatal("GET /v1/models called backend, want prefix boundary rejection")
+		t.Fatal("path outside prefix called backend, want prefix boundary rejection")
 	}
 }
 

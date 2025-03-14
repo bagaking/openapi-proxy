@@ -128,7 +128,7 @@ func (p *Proxy) handleRequest(c *gin.Context) {
 	requestPath := c.Request.URL.Path
 	if p.config.PathPrefix != "" {
 		// 如果请求路径不以配置的前缀开头，返回 404
-		if !strings.HasPrefix(requestPath, p.config.PathPrefix) {
+		if requestPath != p.config.PathPrefix && !strings.HasPrefix(requestPath, p.config.PathPrefix+"/") {
 			c.Status(http.StatusNotFound)
 			return
 		}
