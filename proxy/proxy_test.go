@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -269,6 +270,59 @@ func TestHandleRequestRewritePreservesTrailingSlash(t *testing.T) {
 	got := <-paths
 	if got != wantPath {
 		t.Errorf("backend path = %q, want %q", got, wantPath)
+	}
+}
+
+func TestJoinProxyPathBoundaries(t *testing.T) {
+	apiBase := strings.Join([]string{"", "api", "v3"}, "/")
+	filesPath := strings.Join([]string{"", "files", ""}, "/")
+	nestedFilesPath := strings.Join([]string{"", "", "", "files", "", "x", ""}, "/")
+
+	tests := []struct {
+		name        string
+		basePath    string
+		requestPath string
+		want        string
+	}{
+		{
+			name:        "empty request keeps base",
+			basePath:    apiBase + "/",
+			requestPath: "",
+			want:        apiBase + "/",
+		},
+		{
+			name:        "empty base keeps request",
+			basePath:    "",
+			requestPath: filesPath,
+			want:        filesPath,
+		},
+		{
+			name:        "root base keeps request",
+			basePath:    "/",
+			requestPath: filesPath,
+			want:        filesPath,
+		},
+		{
+			name:        "trim boundary slashes only",
+			basePath:    apiBase + "///",
+			requestPath: nestedFilesPath,
+			want:        apiBase + "/" + strings.TrimLeft(nestedFilesPath, "/"),
+		},
+		{
+			name:        "bare root request joins under base",
+			basePath:    apiBase,
+			requestPath: "/",
+			want:        apiBase + "/",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := joinProxyPath(tt.basePath, tt.requestPath)
+			if got != tt.want {
+				t.Errorf("joinProxyPath(%q, %q) = %q, want %q", tt.basePath, tt.requestPath, got, tt.want)
+			}
+		})
 	}
 }
 
