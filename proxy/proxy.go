@@ -22,6 +22,8 @@ import (
 	pluginPKG "github.com/bagaking/openapi-proxy/plugin"
 )
 
+const proxyErrorResponseBody = "Proxy Error: upstream request failed"
+
 // Proxy OpenAI 协议代理
 type Proxy struct {
 	config  Config
@@ -266,20 +268,14 @@ func (p *Proxy) handleRequest(c *gin.Context) {
 			// 其他错误才记录
 			p.logger.Error("Proxy error:", err)
 			w.WriteHeader(http.StatusBadGateway)
-			w.Write([]byte(fmt.Sprintf("Proxy Error: %v", err)))
+			_, _ = w.Write([]byte(proxyErrorResponseBody))
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			p.logger.Info("Received response:", resp.Status)
 
-			p.mu.RLock()
-			for _, plugin := range p.plugins {
-				if err := plugin.AfterResponse(resp); err != nil {
-					p.logger.Error("Plugin error:", err)
-					p.mu.RUnlock()
-					return err
-				}
+			if err := p.applyAfterResponsePlugins(resp); err != nil {
+				return err
 			}
-			p.mu.RUnlock()
 
 			// 处理流式响应
 			if isStreamRequest {
@@ -328,6 +324,27 @@ func (p *Proxy) handleRequest(c *gin.Context) {
 	proxy.ServeHTTP(c.Writer, c.Request)
 
 	// 注意: 这里不会继续执行，因为 ServeHTTP 已经写入了响应
+}
+
+func (p *Proxy) applyAfterResponsePlugins(resp *http.Response) error {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	for _, plugin := range p.plugins {
+		beforeBody := resp.Body
+		err := plugin.AfterResponse(resp)
+		if beforeBody != nil && resp.Body != beforeBody {
+			if closeErr := beforeBody.Close(); closeErr != nil {
+				p.logger.Error("Failed to close replaced response body:", closeErr)
+			}
+		}
+		if err != nil {
+			p.logger.Error("Plugin error:", err)
+			return err
+		}
+	}
+
+	return nil
 }
 
 func joinProxyPath(basePath, requestPath string) string {

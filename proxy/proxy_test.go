@@ -3,11 +3,14 @@ package proxy
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -324,6 +327,96 @@ func TestHandleRequestRunsAfterResponsePlugins(t *testing.T) {
 	}
 }
 
+func TestApplyAfterResponsePluginsClosesReplacedBody(t *testing.T) {
+	oldBody := newCloseTrackingBody("backend response")
+	plugin := &rewriteResponsePlugin{
+		body:        []byte(`{"plugin":true}`),
+		contentType: "application/json",
+	}
+	proxy := NewProxy(Config{})
+	proxy.RegisterPlugin(plugin)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     http.StatusText(http.StatusOK),
+		Header:     make(http.Header),
+		Body:       oldBody,
+	}
+	t.Cleanup(func() {
+		if resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
+
+	if err := proxy.applyAfterResponsePlugins(resp); err != nil {
+		t.Fatalf("applyAfterResponsePlugins returned error: %v", err)
+	}
+
+	if !plugin.called.Load() {
+		t.Fatal("applyAfterResponsePlugins did not call AfterResponse plugin")
+	}
+	if got := oldBody.closeCount.Load(); got != 1 {
+		t.Errorf("applyAfterResponsePlugins old body close count = %d, want 1", got)
+	}
+	if resp.Body == oldBody {
+		t.Fatal("applyAfterResponsePlugins kept old body, want replaced body")
+	}
+	gotBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("ReadAll replaced body returned error: %v", err)
+	}
+	if !bytes.Equal(gotBody, plugin.body) {
+		t.Errorf("replaced body = %s, want %s", gotBody, plugin.body)
+	}
+}
+
+func TestHandleRequestAfterResponsePluginErrorReturnsSanitizedBadGateway(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"backend":true}`))
+	}))
+	t.Cleanup(backend.Close)
+
+	rawErr := "raw-plugin-detail-leak-marker-7349"
+	logger := &captureProxyLogger{}
+	proxy := NewProxy(Config{TargetURL: backend.URL})
+	proxy.logger = logger
+	proxy.RegisterPlugin(&afterResponseErrorPlugin{err: errors.New(rawErr)})
+
+	pathSep := "/"
+	chatPath := pathSep + "v1" + pathSep + "chat" + pathSep + "completions"
+	router := gin.New()
+	router.Any(pathSep+"*path", proxy.handleRequest)
+	frontend := httptest.NewServer(router)
+	t.Cleanup(frontend.Close)
+
+	resp, err := http.Post(frontend.URL+chatPath, "application/json", bytes.NewReader([]byte(`{}`)))
+	if err != nil {
+		t.Fatalf("POST %s returned error: %v", chatPath, err)
+	}
+	t.Cleanup(func() { resp.Body.Close() })
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("ReadAll response body returned error: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("POST %s status = %d, want %d; body = %s", chatPath, resp.StatusCode, http.StatusBadGateway, body)
+	}
+	gotBody := strings.TrimSpace(string(body))
+	if gotBody != proxyErrorResponseBody {
+		t.Fatalf("POST %s body = %q, want %q", chatPath, gotBody, proxyErrorResponseBody)
+	}
+	if strings.Contains(gotBody, rawErr) {
+		t.Fatalf("POST %s body = %q, leaked raw plugin error %q", chatPath, gotBody, rawErr)
+	}
+	if logs := logger.joined(); !strings.Contains(logs, rawErr) {
+		t.Fatalf("proxy logs = %q, want raw plugin error %q", logs, rawErr)
+	}
+}
+
 func TestJoinProxyPathBoundaries(t *testing.T) {
 	apiBase := strings.Join([]string{"", "api", "v3"}, "/")
 	filesPath := strings.Join([]string{"", "files", ""}, "/")
@@ -398,6 +491,65 @@ func (p *rewriteResponsePlugin) AfterResponse(resp *http.Response) error {
 
 func (p *rewriteResponsePlugin) Configure(config json.RawMessage) error {
 	return nil
+}
+
+type afterResponseErrorPlugin struct {
+	err error
+}
+
+func (p *afterResponseErrorPlugin) BeforeRequest(req *http.Request) error {
+	return nil
+}
+
+func (p *afterResponseErrorPlugin) AfterResponse(resp *http.Response) error {
+	return p.err
+}
+
+func (p *afterResponseErrorPlugin) Configure(config json.RawMessage) error {
+	return nil
+}
+
+type closeTrackingBody struct {
+	*bytes.Reader
+	closeCount atomic.Int32
+}
+
+func newCloseTrackingBody(body string) *closeTrackingBody {
+	return &closeTrackingBody{Reader: bytes.NewReader([]byte(body))}
+}
+
+func (b *closeTrackingBody) Close() error {
+	b.closeCount.Add(1)
+	return nil
+}
+
+type captureProxyLogger struct {
+	mu      sync.Mutex
+	entries []string
+}
+
+func (l *captureProxyLogger) Debug(args ...interface{}) {
+	l.append(args...)
+}
+
+func (l *captureProxyLogger) Info(args ...interface{}) {
+	l.append(args...)
+}
+
+func (l *captureProxyLogger) Error(args ...interface{}) {
+	l.append(args...)
+}
+
+func (l *captureProxyLogger) append(args ...interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.entries = append(l.entries, fmt.Sprint(args...))
+}
+
+func (l *captureProxyLogger) joined() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return strings.Join(l.entries, "\n")
 }
 
 func newProxyTestRouter(cfg Config) *gin.Engine {
