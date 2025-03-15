@@ -68,7 +68,7 @@ func main() {
     }
 
     // 获取处理函数
-    openaiHandler, err := proxy.StartCursorProxy(openaiConf)
+    openaiHandler, err := proxy.StartCursorProxy(openaiConf, nil)
     if err != nil {
         panic(err)
     }
@@ -84,7 +84,7 @@ func main() {
             "x-api-key": "your-anthropic-key",
         },
     }
-    anthropicHandler, err := proxy.StartCursorProxy(anthropicConf)
+    anthropicHandler, err := proxy.StartCursorProxy(anthropicConf, nil)
     if err != nil {
         panic(err)
     }
@@ -122,7 +122,7 @@ func main() {
     }
 
     // 启动独立服务器
-    _, err := proxy.StartCursorProxy(conf)
+    _, err := proxy.StartCursorProxy(conf, nil)
     if err != nil {
         panic(err)
     }
