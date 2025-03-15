@@ -271,6 +271,16 @@ func (p *Proxy) handleRequest(c *gin.Context) {
 		ModifyResponse: func(resp *http.Response) error {
 			p.logger.Info("Received response:", resp.Status)
 
+			p.mu.RLock()
+			for _, plugin := range p.plugins {
+				if err := plugin.AfterResponse(resp); err != nil {
+					p.logger.Error("Plugin error:", err)
+					p.mu.RUnlock()
+					return err
+				}
+			}
+			p.mu.RUnlock()
+
 			// 处理流式响应
 			if isStreamRequest {
 				// 设置 SSE headers

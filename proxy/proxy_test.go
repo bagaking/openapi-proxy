@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -273,6 +275,55 @@ func TestHandleRequestRewritePreservesTrailingSlash(t *testing.T) {
 	}
 }
 
+func TestHandleRequestRunsAfterResponsePlugins(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"backend":true}`))
+	}))
+	t.Cleanup(backend.Close)
+
+	plugin := &rewriteResponsePlugin{
+		body:        []byte(`{"plugin":true}`),
+		contentType: "application/json",
+	}
+	proxy := NewProxy(Config{TargetURL: backend.URL})
+	proxy.RegisterPlugin(plugin)
+
+	pathSep := "/"
+	chatPath := pathSep + "v1" + pathSep + "chat" + pathSep + "completions"
+	router := gin.New()
+	router.Any(pathSep+"*path", proxy.handleRequest)
+	frontend := httptest.NewServer(router)
+	t.Cleanup(frontend.Close)
+
+	resp, err := http.Post(frontend.URL+chatPath, "application/json", bytes.NewReader([]byte(`{}`)))
+	if err != nil {
+		t.Fatalf("POST %s returned error: %v", chatPath, err)
+	}
+	t.Cleanup(func() { resp.Body.Close() })
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want %d; body = %s", resp.StatusCode, http.StatusOK, respBody)
+	}
+	gotBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !plugin.called.Load() {
+		t.Fatal("AfterResponse plugin was not called")
+	}
+	if !bytes.Equal(gotBody, plugin.body) {
+		t.Fatalf("response body = %s, want %s", gotBody, plugin.body)
+	}
+	if got := resp.Header.Get("Content-Type"); got != plugin.contentType {
+		t.Fatalf("Content-Type = %q, want %q", got, plugin.contentType)
+	}
+}
+
 func TestJoinProxyPathBoundaries(t *testing.T) {
 	apiBase := strings.Join([]string{"", "api", "v3"}, "/")
 	filesPath := strings.Join([]string{"", "files", ""}, "/")
@@ -324,6 +375,29 @@ func TestJoinProxyPathBoundaries(t *testing.T) {
 			}
 		})
 	}
+}
+
+type rewriteResponsePlugin struct {
+	called      atomic.Bool
+	body        []byte
+	contentType string
+}
+
+func (p *rewriteResponsePlugin) BeforeRequest(req *http.Request) error {
+	return nil
+}
+
+func (p *rewriteResponsePlugin) AfterResponse(resp *http.Response) error {
+	p.called.Store(true)
+	resp.Body = io.NopCloser(bytes.NewBuffer(p.body))
+	resp.ContentLength = int64(len(p.body))
+	resp.Header.Set("Content-Type", p.contentType)
+	resp.Header.Set("Content-Length", strconv.Itoa(len(p.body)))
+	return nil
+}
+
+func (p *rewriteResponsePlugin) Configure(config json.RawMessage) error {
+	return nil
 }
 
 func newProxyTestRouter(cfg Config) *gin.Engine {
